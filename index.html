@@ -41,7 +41,7 @@ const firebaseConfig = {
 };
 // =====================================================================================================
 // ======= 2. PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE (for email alerts). Leave empty to turn emails off =======
-const MAIL_URL="https://script.google.com/macros/s/AKfycby3VRdA8JPiV-ezX9-3uGrlOPsDfEuVYDYi5KHN7sgCUhn85CLCR5ftQ7aAao8H6UW2/exec";
+const MAIL_URL="";
 const WK=[0,6]; // weekend days: 0=Sun ... 6=Sat. Example Fri+Sat: [5,6]
 const HOL={'2026-05-01':'Maharashtra Din & Buddha Purnima','2026-05-28':'Bakri Id','2026-06-26':'Moharum','2026-08-15':'Independence Day / Parsi New Year','2026-08-26':'Id-e-Milad','2026-09-14':'Ganesh Chaturthi','2026-10-02':'Mahatma Gandhi Jayanti','2026-10-20':'Dasara','2026-11-10':'Diwali - Bali Pratipada','2026-11-11':'Bhaubeej','2026-12-25':'Christmas'};
 const off=d=>WK.includes(new Date(d+'T00:00').getDay())||!!HOL[d];
@@ -73,7 +73,8 @@ const role=()=>me.role;
 
 onAuthStateChanged(auth,async u=>{if(reg)return;if(!u){me=null;return login()}
   uid=u.uid;const s=await getDoc(doc(db,'users',uid));if(!s.exists()){msg='Profile not found. Ask the admin.';await signOut(auth);return}
-  me=s.data();if(me.role==='hod')setDoc(doc(db,'depts',dk(me.dept)),{['h_'+uid]:u.email},{merge:true}).catch(()=>{});tab='mine';show()});
+  me=s.data();if(!['staff','hod','admin'].includes(me.role)){msg='Your role "'+me.role+'" is not valid. It must be exactly staff, hod or admin. Ask the admin to fix it.';await signOut(auth);return}
+  if(me.role==='hod')setDoc(doc(db,'depts',dk(me.dept)),{['h_'+uid]:u.email},{merge:true}).catch(()=>{});tab='mine';show()});
 
 function login(register){$('#nav').innerHTML='';$('#app').innerHTML=`<div class="card login"><img class="lg" src="logo.png" alt="SHSRC Maharashtra" style="display:block;margin:0 auto 14px;height:110px;background:#fff;border-radius:12px;padding:6px" onerror="this.remove()"><h2>${register?'Create account':'Sign in'}</h2>
  <div class="row" style="flex-direction:column;align-items:stretch">
