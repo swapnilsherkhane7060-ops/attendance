@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Attendance & Leave</title>
+<style>
+:root{--bg:#f3f5f4;--c:#fff;--ink:#1d2a27;--mu:#63726e;--ln:#d9e0de;--br:#17695b;--bi:#fff;--ok:#1f8a5b;--no:#c0392b;--wa:#c98a0b}
+@media(prefers-color-scheme:dark){:root{--bg:#141a19;--c:#1e2726;--ink:#e6eeec;--mu:#93a5a1;--ln:#33423f;--br:#3aa592;--bi:#08201b;--ok:#4cc58b;--no:#ef7a6c;--wa:#e3b04a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+header{background:var(--br);color:var(--bi);padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:18px}nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:none;border:0;color:inherit;padding:7px 12px;border-radius:6px;font:inherit;cursor:pointer;opacity:.8}nav button.on{background:rgba(255,255,255,.22);opacity:1;font-weight:600}
+body::before{content:'';position:fixed;inset:0;background:url(logo.png) center/min(70vmin,600px) no-repeat;opacity:.12;pointer-events:none;z-index:0}
+header,main{position:relative;z-index:1}
+main{max-width:900px;margin:0 auto;padding:16px 14px 60px}
+.card{background:color-mix(in srgb,var(--c) 90%,transparent);border:1px solid var(--ln);border-radius:8px;padding:14px;margin-bottom:14px}h2{font-size:16px;margin:0 0 10px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:8px}label{display:flex;flex-direction:column;font-size:13px;color:var(--mu);gap:3px}
+input,select,button.b{font:inherit;padding:8px 10px;border:1px solid var(--ln);border-radius:6px;background:var(--c);color:var(--ink)}
+button.b{background:var(--br);color:var(--bi);border-color:var(--br);font-weight:600;cursor:pointer}button.b.g{background:none;color:var(--ink);border-color:var(--ln);font-weight:400}button.b.s{padding:4px 9px;font-size:13px}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--ln);white-space:nowrap}th{font-size:13px;color:var(--mu)}
+.tag{padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;color:#fff}.Pending{background:var(--wa)}.Approved{background:var(--ok)}.Rejected{background:var(--no)}
+.big{font-size:28px;font-weight:700}.mu{color:var(--mu);font-size:13px}.err{color:var(--no)}.login{max-width:380px;margin:40px auto}
+:focus-visible{outline:2px solid #2f6fb0;outline-offset:2px}
+</style></head><body>
+<header><h1 style="display:flex;align-items:center;gap:8px"><img src="logo.png" alt="" height="34" style="background:#fff;border-radius:6px;padding:2px" onerror="this.remove()">Attendance &amp; Leave</h1><nav id="nav"></nav></header>
+<main id="app"></main>
+<script type="module">
+// ======= 1. PASTE YOUR FIREBASE CONFIG HERE (Firebase console > Project settings > Your apps) =======
+const firebaseConfig = {
+  apiKey: "AIzaSyCOsArmbl6VmPdZQ4PZZXN4Scf6abGSaxQ",
+  authDomain: "leave-and-absence.firebaseapp.com",
+  projectId: "leave-and-absence",
+  storageBucket: "leave-and-absence.firebasestorage.app",
+  messagingSenderId: "944921125529",
+  appId: "1:944921125529:web:ecb4fad136593c5b44ce08"
+};
+// =====================================================================================================
+const WK=[0,6]; // weekend days: 0=Sun ... 6=Sat. Example Fri+Sat: [5,6]
+const HOL={'2026-05-01':'Maharashtra Din & Buddha Purnima','2026-05-28':'Bakri Id','2026-06-26':'Moharum','2026-08-15':'Independence Day / Parsi New Year','2026-08-26':'Id-e-Milad','2026-09-14':'Ganesh Chaturthi','2026-10-02':'Mahatma Gandhi Jayanti','2026-10-20':'Dasara','2026-11-10':'Diwali - Bali Pratipada','2026-11-11':'Bhaubeej','2026-12-25':'Christmas'};
+const off=d=>WK.includes(new Date(d+'T00:00').getDay())||!!HOL[d];
+const TYPES=['Annual leave','Sick leave','Casual leave','Unpaid leave','Other'];
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,onAuthStateChanged,signInWithEmailAndPassword,createUserWithEmailAndPassword,signOut,sendPasswordResetEmail} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,doc,getDoc,setDoc,addDoc,updateDoc,deleteDoc,collection,query,where,getDocs} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),today=()=>fmt(new Date());
+const days=l=>{if(l.half)return .5;let n=0;for(let d=new Date(l.from+'T00:00');d<=new Date(l.to+'T00:00');d.setDate(d.getDate()+1))if(!off(fmt(d)))n++;return n};
+if(!firebaseConfig.apiKey){$('#app').innerHTML='<div class="card"><h2>Setup needed</h2><p>Paste your Firebase config into index.html (see the setup steps).</p></div>';throw 0}
+const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
+let me=null,uid=null,tab='mine',reg=false,msg='',month=today().slice(0,7),rows=[];
+const get=async q=>(await getDocs(q)).docs.map(d=>({id:d.id,...d.data()}));
+const role=()=>me.role;
+
+onAuthStateChanged(auth,async u=>{if(reg)return;if(!u){me=null;return login()}
+  uid=u.uid;const s=await getDoc(doc(db,'users',uid));if(!s.exists()){msg='Profile not found. Ask the admin.';await signOut(auth);return}
+  me=s.data();tab='mine';show()});
+
+function login(register){$('#nav').innerHTML='';$('#app').innerHTML=`<div class="card login"><h2>${register?'Create account':'Sign in'}</h2>
+ <div class="row" style="flex-direction:column;align-items:stretch">
+ ${register?'<label>Full name<input id="n"></label><label>Department<input id="d" placeholder="e.g. Finance"></label>':''}
+ <label>Email<input id="e" type="email" autocomplete="username"></label><label>Password<input id="p" type="password" autocomplete="${register?'new':'current'}-password"></label>
+ <button class="b" data-a="${register?'reg':'in'}">${register?'Create account':'Sign in'}</button>
+ <button class="b g" data-a="${register?'tologin':'toreg'}">${register?'I already have an account':'Create new account'}</button>
+ ${register?'':'<button class="b g" data-a="reset">Forgot password</button>'}</div><p class="err" id="m">${esc(msg)}</p></div>`;msg=''}
+
+function show(){const t={mine:'My leave',check:'Check in'};if(role()!=='staff'){t.team='Team';t.report='Report'}t.hol='Holidays';if(role()==='admin')t.people='People';
+ $('#nav').innerHTML=Object.entries(t).map(([k,v])=>`<button class="${k===tab?'on':''}" data-a="tab" data-k="${k}">${v}</button>`).join('')+`<button data-a="out">Sign out</button>`;
+ $('#app').innerHTML='<p class="mu">Loading…</p>';({mine,check,team,report,hol,people})[tab]().then(h=>$('#app').innerHTML=h).catch(e=>$('#app').innerHTML=`<div class="card err">Error: ${esc(e.message)}</div>`)}
+
+const used=ls=>ls.filter(l=>l.status==='Approved'&&l.type!=='Unpaid leave'&&l.from.startsWith(String(new Date().getFullYear()))).reduce((a,l)=>a+days(l),0);
+const tag=s=>`<span class="tag ${s}">${s}</span>`;
+
+async function mine(){
+ const ls=(await get(query(collection(db,'leaves'),where('uid','==',uid)))).sort((a,b)=>a.from<b.from?1:-1),u=used(ls),al=me.allow??21;
+ return `<div class="card"><h2>Hello, ${esc(me.name)}</h2><span class="big">${al-u}</span> <span class="mu">days of leave left this year (${u} used of ${al}) · ${esc(me.dept)}</span></div>
+ <div class="card"><h2>Request leave</h2><div class="row"><label>Type<select id="t">${TYPES.map(t=>`<option>${t}</option>`).join('')}</select></label>
+ <label>From<input type="date" id="f" value="${today()}"></label><label>To<input type="date" id="o" value="${today()}"></label>
+ <label>Reason<input id="r" placeholder="Optional"></label><label style="flex-direction:row;align-items:center;gap:5px"><input type="checkbox" id="h">Half day</label>
+ <button class="b" data-a="req">Submit</button></div><p class="err" id="m"></p></div>
+ <div class="card"><h2>My requests</h2>${ls.length?`<div class="tw"><table><tr><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th></th></tr>${ls.map(l=>`<tr><td>${esc(l.type)}</td><td>${l.from} to ${l.to}</td><td>${days(l)}</td><td>${tag(l.status)}</td><td>${l.status==='Pending'?`<button class="b s g" data-a="del" data-k="${l.id}">Cancel</button>`:''}</td></tr>`).join('')}</table></div>`:'<p class="mu">No requests yet.</p>'}</div>`}
+
+async function check(){
+ const s=await getDoc(doc(db,'attendance',today()+'_'+uid)),cur=s.exists()?s.data().status:'';
+ return `<div class="card"><h2>Today, ${today()}</h2><p>${cur?`You are marked <b>${cur}</b>. You can change it below.`:'You have not checked in yet.'}</p>
+ <div class="row">${['Present','Late','Half day'].map(k=>`<button class="b ${cur===k?'':'g'}" data-a="ci" data-k="${k}">${k}</button>`).join('')}</div><p class="mu" id="m"></p></div>`}
+
+async function team(){
+ const adm=role()==='admin',f=(c)=>adm?query(collection(db,c)):query(collection(db,c),where('dept','==',me.dept));
+ const [ls,us,at]=await Promise.all([get(f('leaves')),get(f('users')),get(query(collection(db,'attendance'),...(adm?[]:[where('dept','==',me.dept)]),where('date','==',today())))]);
+ const pend=ls.filter(l=>l.status==='Pending'&&l.uid!==uid||adm&&l.status==='Pending'),nm=Object.fromEntries(us.map(u=>[u.id,u.name])),t=today();
+ const st=u=>{const a=at.find(x=>x.uid===u.id);if(a)return a.status;if(ls.some(l=>l.uid===u.id&&l.status==='Approved'&&l.from<=t&&t<=l.to))return'On leave';return off(t)?(HOL[t]||'Off day'):'Not in yet'};
+ return `<div class="card"><h2>Waiting for approval (${pend.length})</h2>${pend.length?`<div class="tw"><table><tr><th>Name</th><th>Type</th><th>Dates</th><th>Days</th><th>Reason</th><th></th></tr>${pend.map(l=>`<tr><td>${esc(l.name)}</td><td>${esc(l.type)}</td><td>${l.from} to ${l.to}</td><td>${days(l)}</td><td>${esc(l.note||'')}</td>
+ <td><button class="b s" data-a="set" data-k="${l.id}" data-v="Approved">Approve</button> <button class="b s g" data-a="set" data-k="${l.id}" data-v="Rejected">Reject</button></td></tr>`).join('')}</table></div>`:'<p class="mu">Nothing waiting.</p>'}</div>
+ <div class="card"><h2>Today</h2><div class="tw"><table><tr><th>Name</th>${adm?'<th>Department</th>':''}<th>Status</th></tr>${us.sort((a,b)=>a.name<b.name?-1:1).map(u=>`<tr><td>${esc(u.name)}</td>${adm?`<td>${esc(u.dept)}</td>`:''}<td>${st(u)}</td></tr>`).join('')}</table></div></div>`}
+
+async function hol(){const e=Object.entries(HOL).sort();return `<div class="card"><h2>Holidays 2026</h2><div class="tw"><table><tr><th>Date</th><th>Day</th><th>Holiday</th></tr>${e.map(([d,n])=>`<tr><td>${d}</td><td>${new Date(d+'T00:00').toLocaleDateString('en-IN',{weekday:'long'})}</td><td>${esc(n)}</td></tr>`).join('')}</table></div><p class="mu">Saturdays and Sundays are weekly offs.</p></div>`}
+
+async function report(){
+ const adm=role()==='admin',f=c=>adm?query(collection(db,c)):query(collection(db,c),where('dept','==',me.dept));
+ const [ls,us,at]=await Promise.all([get(f('leaves')),get(f('users')),get(f('attendance'))]);
+ const [y,m]=month.split('-').map(Number),n=new Date(y,m,0).getDate(),t=today();
+ rows=us.sort((a,b)=>a.name<b.name?-1:1).map(u=>{const c={Present:0,Late:0,'Half day':0,Leave:0,Absent:0};
+  for(let i=1;i<=n;i++){const d=month+'-'+String(i).padStart(2,'0');if(d>t||off(d))continue;
+   const a=at.find(x=>x.uid===u.id&&x.date===d);if(a){c[a.status]++;continue}
+   const l=ls.find(x=>x.uid===u.id&&x.status==='Approved'&&x.from<=d&&d<=x.to);
+   if(l)c.Leave+=l.half?.5:1;else c.Absent++}
+  return [u.name,u.dept,c.Present,c.Late,c['Half day'],c.Leave,c.Absent]});
+ return `<div class="card"><h2>Monthly report</h2><div class="row"><label>Month<input type="month" id="rm" value="${month}"></label><button class="b" data-a="csv">Download CSV</button></div>
+ <div class="tw"><table><tr><th>Name</th><th>Department</th><th>Present</th><th>Late</th><th>Half day</th><th>Leave</th><th>Absent</th></tr>${rows.map(r=>`<tr>${r.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</table></div>
+ <p class="mu">Weekends and holidays are not counted. A working day with no check-in and no approved leave counts as Absent.</p></div>`}
+
+async function people(){
+ const us=(await get(query(collection(db,'users')))).sort((a,b)=>a.name<b.name?-1:1);
+ return `<div class="card"><h2>People</h2><p class="mu">Set each person's role, department and yearly leave allowance. HODs see only their own department.</p><div class="tw"><table><tr><th>Name</th><th>Role</th><th>Department</th><th>Allowance</th><th></th></tr>
+ ${us.map(u=>`<tr data-u="${u.id}"><td>${esc(u.name)}</td><td><select class="ro">${['staff','hod','admin'].map(r=>`<option ${r===u.role?'selected':''}>${r}</option>`).join('')}</select></td>
+ <td><input class="de" value="${esc(u.dept)}"></td><td><input class="al" type="number" min="0" style="width:80px" value="${u.allow??21}"></td><td><button class="b s" data-a="sp">Save</button></td></tr>`).join('')}</table></div></div>`}
+
+document.addEventListener('change',e=>{if(e.target.id==='rm'&&e.target.value){month=e.target.value;show()}});
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a,k=b.dataset.k,m=t=>{const x=$('#m');if(x)x.textContent=t};
+ try{
+ if(a==='tab'){tab=k;return show()}
+ if(a==='csv'){const q=v=>'"'+String(v).replace(/"/g,'""')+'"',x=[['Name','Department','Present','Late','Half day','Leave','Absent'],...rows].map(r=>r.map(q).join(',')).join('\n'),el=document.createElement('a');el.href=URL.createObjectURL(new Blob(['\ufeff'+x],{type:'text/csv'}));el.download='attendance-'+month+'.csv';el.click();return}
+ if(a==='out')return signOut(auth);
+ if(a==='toreg')return login(1);if(a==='tologin')return login();
+ if(a==='reset'){const em=$('#e').value;if(!em)return m('Type your email first.');await sendPasswordResetEmail(auth,em);return m('Reset email sent.')}
+ if(a==='in'){await signInWithEmailAndPassword(auth,$('#e').value,$('#p').value)}
+ if(a==='reg'){const n=$('#n').value.trim(),d=$('#d').value.trim();if(!n||!d)return m('Enter name and department.');
+  reg=true;const c=await createUserWithEmailAndPassword(auth,$('#e').value,$('#p').value);uid=c.user.uid;
+  me={name:n,dept:d,role:'staff',allow:21};await setDoc(doc(db,'users',uid),me);reg=false;tab='mine';show()}
+ if(a==='req'){const f=$('#f').value,o=$('#o').value,h=$('#h').checked;if(!f||!o||o<f)return m('Check the dates.');if(h&&f!==o)return m('Half day needs the same date.');
+  await addDoc(collection(db,'leaves'),{uid,name:me.name,dept:me.dept,type:$('#t').value,from:f,to:o,half:h,note:$('#r').value.trim(),status:'Pending'});show()}
+ if(a==='del'&&confirm('Cancel this request?')){await deleteDoc(doc(db,'leaves',k));show()}
+ if(a==='ci'){await setDoc(doc(db,'attendance',today()+'_'+uid),{uid,name:me.name,dept:me.dept,date:today(),status:k});show()}
+ if(a==='set'){await updateDoc(doc(db,'leaves',k),{status:b.dataset.v});show()}
+ if(a==='sp'){const r=b.closest('tr');await updateDoc(doc(db,'users',r.dataset.u),{role:r.querySelector('.ro').value,dept:r.querySelector('.de').value.trim(),allow:+r.querySelector('.al').value||0});b.textContent='Saved'}
+ }catch(x){reg=false;m(x.code==='auth/invalid-credential'?'Wrong email or password.':x.code==='auth/email-already-in-use'?'This email already has an account.':x.message)}});
+</script></body></html>
