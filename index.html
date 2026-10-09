@@ -40,6 +40,8 @@ const firebaseConfig = {
   appId: "1:944921125529:web:ecb4fad136593c5b44ce08"
 };
 // =====================================================================================================
+// ======= 2. PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE (for email alerts). Leave empty to turn emails off =======
+const MAIL_URL="https://script.google.com/macros/s/AKfycby3VRdA8JPiV-ezX9-3uGrlOPsDfEuVYDYi5KHN7sgCUhn85CLCR5ftQ7aAao8H6UW2/exec";
 const WK=[0,6]; // weekend days: 0=Sun ... 6=Sat. Example Fri+Sat: [5,6]
 const HOL={'2026-05-01':'Maharashtra Din & Buddha Purnima','2026-05-28':'Bakri Id','2026-06-26':'Moharum','2026-08-15':'Independence Day / Parsi New Year','2026-08-26':'Id-e-Milad','2026-09-14':'Ganesh Chaturthi','2026-10-02':'Mahatma Gandhi Jayanti','2026-10-20':'Dasara','2026-11-10':'Diwali - Bali Pratipada','2026-11-11':'Bhaubeej','2026-12-25':'Christmas'};
 const off=d=>WK.includes(new Date(d+'T00:00').getDay())||!!HOL[d];
@@ -64,12 +66,14 @@ const days=l=>{if(l.half)return .5;let n=0;for(let d=new Date(l.from+'T00:00');d
 if(!firebaseConfig.apiKey){$('#app').innerHTML='<div class="card"><h2>Setup needed</h2><p>Paste your Firebase config into index.html (see the setup steps).</p></div>';throw 0}
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
 let me=null,uid=null,tab='mine',reg=false,msg='',month=today().slice(0,7),rows=[];
+const dk=d=>String(d).replace(/\//g,'_');
+async function notify(type,id){try{if(!MAIL_URL)return;const token=await auth.currentUser.getIdToken();await fetch(MAIL_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({type,id,token})})}catch(e){}}
 const get=async q=>(await getDocs(q)).docs.map(d=>({id:d.id,...d.data()}));
 const role=()=>me.role;
 
 onAuthStateChanged(auth,async u=>{if(reg)return;if(!u){me=null;return login()}
   uid=u.uid;const s=await getDoc(doc(db,'users',uid));if(!s.exists()){msg='Profile not found. Ask the admin.';await signOut(auth);return}
-  me=s.data();tab='mine';show()});
+  me=s.data();if(me.role==='hod')setDoc(doc(db,'depts',dk(me.dept)),{['h_'+uid]:u.email},{merge:true}).catch(()=>{});tab='mine';show()});
 
 function login(register){$('#nav').innerHTML='';$('#app').innerHTML=`<div class="card login"><img class="lg" src="logo.png" alt="SHSRC Maharashtra" style="display:block;margin:0 auto 14px;height:110px;background:#fff;border-radius:12px;padding:6px" onerror="this.remove()"><h2>${register?'Create account':'Sign in'}</h2>
  <div class="row" style="flex-direction:column;align-items:stretch">
@@ -145,10 +149,10 @@ document.addEventListener('click',async e=>{const b=e.target.closest('[data-a]')
   reg=true;const c=await createUserWithEmailAndPassword(auth,$('#e').value,$('#p').value);uid=c.user.uid;
   me={name:n,dept:d,role:'staff',allow:21};await setDoc(doc(db,'users',uid),me);reg=false;tab='mine';show()}
  if(a==='req'){const f=$('#f').value,o=$('#o').value,h=$('#h').checked;if(!f||!o||o<f)return m('Check the dates.');if(h&&f!==o)return m('Half day needs the same date.');
-  await addDoc(collection(db,'leaves'),{uid,name:me.name,dept:me.dept,type:$('#t').value,from:f,to:o,half:h,note:$('#r').value.trim(),status:'Pending'});show()}
+  const ref=await addDoc(collection(db,'leaves'),{uid,email:auth.currentUser.email,name:me.name,dept:me.dept,type:$('#t').value,from:f,to:o,half:h,note:$('#r').value.trim(),status:'Pending'});notify('applied',ref.id);show()}
  if(a==='del'&&confirm('Cancel this request?')){await deleteDoc(doc(db,'leaves',k));show()}
  if(a==='ci'){await setDoc(doc(db,'attendance',today()+'_'+uid),{uid,name:me.name,dept:me.dept,date:today(),status:k});show()}
- if(a==='set'){await updateDoc(doc(db,'leaves',k),{status:b.dataset.v});show()}
+ if(a==='set'){await updateDoc(doc(db,'leaves',k),{status:b.dataset.v});notify('decided',k);show()}
  if(a==='sp'){const r=b.closest('tr');await updateDoc(doc(db,'users',r.dataset.u),{role:r.querySelector('.ro').value,dept:r.querySelector('.de').value.trim(),allow:+r.querySelector('.al').value||0});b.textContent='Saved'}
  }catch(x){reg=false;m(x.code==='auth/invalid-credential'?'Wrong email or password.':x.code==='auth/email-already-in-use'?'This email already has an account.':x.message)}});
 </script></body></html>
